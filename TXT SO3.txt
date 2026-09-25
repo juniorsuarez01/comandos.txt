@@ -1,0 +1,101 @@
+====================================================
+PRÁCTICAS RHEL 10.2 - JUNIOR SR
+====================================================
+
+----------------------------------------------------
+PRACTICA 2: Configuración de parámetros de red
+----------------------------------------------------
+
+# Ver perfiles de conexión existentes
+nmcli connection show
+
+# --- DHCP ---
+sudo nmcli connection modify "Wired connection 1" ipv4.method auto
+sudo nmcli connection up "Wired connection 1"
+
+# Verificar DHCP
+ip addr show ens160
+
+# --- IP ESTATICA ---
+sudo nmcli connection modify "Wired connection 1" ipv4.addresses 192.168.1.150/24
+sudo nmcli connection modify "Wired connection 1" ipv4.gateway 192.168.1.1
+sudo nmcli connection modify "Wired connection 1" ipv4.method manual
+sudo nmcli connection up "Wired connection 1"
+
+# Verificar IP estatica
+ip addr show ens160
+
+# Ver gateway
+ip route show
+
+# --- DNS DE GOOGLE ---
+sudo nmcli connection modify "Wired connection 1" ipv4.dns "8.8.8.8 8.8.4.4"
+sudo nmcli connection modify "Wired connection 1" ipv4.ignore-auto-dns yes
+sudo nmcli connection up "Wired connection 1"
+
+# Verificar DNS
+cat /etc/resolv.conf
+nslookup google.com
+
+
+----------------------------------------------------
+PRACTICA 3: Gestion de usuarios y grupos
+----------------------------------------------------
+
+# Crear usuario propio y agregarlo a wheel (superusuario)
+sudo useradd junior
+sudo passwd junior
+sudo usermod -aG wheel junior
+groups junior
+
+# Confirmar que el grupo wheel ya existia
+getent group wheel
+
+# Crear grupo guest y usuario invitado dentro de el
+sudo groupadd guest
+sudo useradd -G guest invitado
+sudo passwd invitado
+id invitado
+
+# Eliminar usuario y grupo creados
+sudo userdel -r invitado
+sudo groupdel guest
+
+# Verificar eliminacion
+id invitado
+getent group guest
+
+
+----------------------------------------------------
+PRACTICA 4: Gestion de permisos de archivos
+----------------------------------------------------
+
+# Crear carpeta y archivo, editar con vi
+mkdir materia
+cd materia
+vi estudiante.txt
+# Dentro de vi: presionar "i", escribir nombre y matricula, "Esc", ":wq"
+
+cat estudiante.txt
+
+# Permisos: solo el propietario tiene control total
+chmod 700 estudiante.txt
+ls -l estudiante.txt
+
+# Permisos: solo el grupo propietario tiene control total
+chmod 070 estudiante.txt
+ls -l estudiante.txt
+
+# Crear materia2 y copiar el archivo dentro
+cd ..
+mkdir materia2
+sudo cp materia/estudiante.txt materia2/
+ls -l materia2/
+
+# Eliminar la carpeta materia junto con su archivo
+sudo rm -rf materia
+ls -l
+
+====================================================
+FIN DE MI PRACTICA.
+====================================================
