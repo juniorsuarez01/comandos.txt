@@ -1,0 +1,107 @@
+Comandos de las practicas - Modulo II
+Red Hat Enterprise Linux 10.2 (maquina virtual)
+
+
+PRACTICA 1
+
+1. Actualizar el sistema y listar los repositorios
+
+sudo dnf check-update      -> muestra que paquetes tienen actualizaciones sin instalarlas
+sudo dnf upgrade -y        -> instala todas las actualizaciones disponibles
+sudo dnf repolist          -> lista los repositorios que estan en uso
+sudo dnf repolist all      -> lista todos los repositorios, activos y desactivados
+
+2. Buscar la herramienta en la cache de los repositorios
+
+sudo dnf makecache         -> actualiza la cache de los repositorios
+dnf search bashtop         -> busca bashtop en los repositorios (salio "No matches found")
+
+Como la VM no tenia salida a internet por falta de gateway, se arreglo asi:
+
+ip route                                    -> muestra la tabla de rutas (faltaba la ruta default)
+ping -c 2 192.168.1.1                       -> prueba la conexion con el router
+sudo ip route add default via 192.168.1.1   -> agrega la puerta de enlace
+ping -c 2 github.com                        -> comprueba que ya hay internet y DNS
+
+3. Instalar Bashtop
+
+sudo dnf install -y git make                       -> instala git y make
+git clone https://github.com/aristocratos/bashtop.git   -> descarga el codigo de bashtop
+cd bashtop                                         -> entra a la carpeta descargada
+sudo make install                                  -> instala bashtop en el sistema
+which bashtop                                      -> muestra donde quedo instalado
+bashtop                                            -> ejecuta la herramienta (se sale con q)
+
+4. Desinstalar Bashtop y borrar su configuracion
+
+cd ~/bashtop                                       -> vuelve a la carpeta del codigo
+sudo make uninstall                                -> desinstala bashtop
+cd                                                 -> vuelve a la carpeta personal
+rm -rf $HOME/.config/bashtop $HOME/bashtop         -> borra la configuracion y la carpeta descargada
+which bashtop                                      -> comprueba que ya no existe
+
+5. Eliminar las dependencias que ya no se usan
+
+sudo dnf remove -y git make   -> desinstala git y make
+sudo dnf autoremove -y        -> elimina las dependencias que quedaron sin usar
+sudo dnf clean all            -> limpia la cache
+
+
+PRACTICA 2
+
+1 y 2. Tareas con cron
+
+sudo systemctl status crond   -> comprueba que el servicio cron esta activo
+sudo crontab -e               -> abre el crontab de root para agregar las tareas
+
+Lineas agregadas en el crontab:
+
+0 23 * * * dnf upgrade -y     -> actualiza el sistema todos los dias a las 11 p.m.
+0 3 * * 0 reboot              -> reinicia la maquina todos los domingos a las 3 a.m.
+
+sudo crontab -l               -> muestra las tareas guardadas
+
+3. Tarea con at
+
+sudo dnf install -y at                  -> instala el comando at
+sudo systemctl enable --now atd         -> activa el servicio de at
+touch /tmp/prueba1.txt /tmp/prueba2.txt /tmp/prueba3.txt   -> crea archivos de prueba en /tmp
+ls /tmp                                 -> muestra el contenido de /tmp antes
+echo "rm -rf /tmp/*" | sudo at now + 1 minute   -> programa el borrado de /tmp para dentro de 1 minuto
+sudo atq                                -> muestra las tareas pendientes de at
+ls /tmp                                 -> muestra /tmp despues (ya vacio)
+
+
+PRACTICA 3
+
+1. Crear el disco de 20 GB
+
+Se hizo desde VMware: VM > Configuracion > Agregar > Disco duro > 20 GB.
+
+2. Reiniciar, formatear en ext4 y montar
+
+sudo reboot                           -> reinicia el sistema
+lsblk                                 -> muestra los discos (el nuevo es nvme0n2 de 20G)
+sudo fdisk /dev/nvme0n2               -> crea la particion (n, p, Enter, Enter, Enter, w)
+sudo mkfs.ext4 /dev/nvme0n2p1         -> formatea la particion en ext4
+mkdir $HOME/Desktop/Disco             -> crea la carpeta en el escritorio
+sudo mount /dev/nvme0n2p1 $HOME/Desktop/Disco   -> monta la particion en esa carpeta
+df -h                                 -> muestra los discos montados
+
+3. Crear el archivo dentro de la carpeta
+
+cd $HOME/Desktop/Disco                -> entra a la carpeta montada
+sudo touch AdrianAlcantara.txt        -> crea el archivo
+ls                                    -> muestra el archivo creado
+
+4. Desmontar y montar en /mnt
+
+cd                                    -> sale de la carpeta
+sudo umount /dev/nvme0n2p1            -> desmonta la unidad
+sudo mount /dev/nvme0n2p1 /mnt        -> la monta en /mnt
+df -h                                 -> comprueba que esta montada en /mnt
+
+5. Comprobar que el archivo sigue ahi
+
+cd /mnt                               -> entra a /mnt
+ls                                    -> muestra AdrianAlcantara.txt, el archivo continua en el disco
