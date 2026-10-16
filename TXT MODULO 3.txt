@@ -1,0 +1,169 @@
+PRACTICA 3 - SSH CON LLAVES
+
+VM: Red Hat 10      Usuario: junior_sr      IP de la VM: 192.168.1.150
+Windows: IP 192.168.1.50      Router: 192.168.1.1
+
+[VM] = lo escribo en la terminal de Red Hat
+[WINDOWS] = lo escribo en PowerShell
+
+
+=========================================
+1. MODO BRIDGE Y PING
+=========================================
+
+Paso 1: poner la VM en modo Bridge
+En VMware: VM > Configuracion > Adaptador de red > Puente (Bridged)
+Para que la VM tenga una IP de mi red real, igual que mi PC.
+
+Paso 2: ver la IP de la VM
+[VM]
+    ip -br a
+Muestra la IP de la VM (192.168.1.150).
+
+Paso 3: ver la IP de Windows
+[WINDOWS]
+    Get-NetIPConfiguration
+Muestra la IP de mi PC (192.168.1.50). Las dos deben empezar con 192.168.1
+
+Paso 4: hacer ping desde Windows a la VM
+[WINDOWS]
+    ping 192.168.1.150
+Prueba que Windows llega a la VM. Si salen respuestas, funciona.
+(captura)
+
+
+=========================================
+2. ACTIVAR SSH Y CONECTARME CON CONTRASENA
+=========================================
+
+Paso 1: instalar el servidor SSH (si no esta)
+[VM]
+    sudo dnf install -y openssh-server
+Instala el programa que recibe las conexiones SSH.
+
+Paso 2: encender el servicio
+[VM]
+    sudo systemctl enable --now sshd
+"enable" lo deja activo siempre que se encienda la VM.
+"--now" lo enciende en este momento.
+
+Paso 3: ver que esta funcionando
+[VM]
+    systemctl status sshd
+Debe decir "active (running)". Salgo con la tecla q.
+(captura)
+
+Paso 4: permitir SSH en el firewall
+[VM]
+    sudo firewall-cmd --permanent --add-service=ssh
+    sudo firewall-cmd --reload
+Abre el puerto 22 para que no lo bloquee el firewall.
+"--reload" aplica el cambio.
+
+Paso 5: conectarme desde Windows
+[WINDOWS]
+    ssh junior_sr@192.168.1.150
+Me conecto con el formato usuario@IP. La primera vez escribo "yes" y despues
+la contrasena de junior_sr.
+(captura)
+
+Para salir de la VM:
+    exit
+
+
+=========================================
+3. CREAR LAS LLAVES EN WINDOWS
+=========================================
+
+Paso 1: crear la carpeta
+[WINDOWS]
+    mkdir $env:USERPROFILE\.ssh -Force
+Crea la carpeta donde guardo las llaves.
+
+Paso 2: generar las llaves
+[WINDOWS]
+    ssh-keygen -t rsa -b 4096 -f "$env:USERPROFILE\.ssh\id_rsa_vm"
+"-t rsa -b 4096" es el tipo y tamano de la llave.
+"-f" es donde se guarda (el destino).
+Cuando pida la passphrase, presiono Enter dos veces sin escribir nada.
+
+Paso 3: ver que se crearon
+[WINDOWS]
+    dir $env:USERPROFILE\.ssh
+Deben salir dos archivos:
+  id_rsa_vm      = llave privada (no se comparte)
+  id_rsa_vm.pub  = llave publica (la que le doy al servidor)
+(captura)
+
+
+=========================================
+4. COPIAR LA LLAVE PUBLICA A LA VM
+=========================================
+
+Paso 1: enviar la llave a la VM
+[WINDOWS]
+    scp $env:USERPROFILE\.ssh\id_rsa_vm.pub junior_sr@192.168.1.150:/home/junior_sr/
+"scp" copia archivos por SSH. Pide la contrasena una ultima vez.
+
+Paso 2: entrar a la VM
+[WINDOWS]
+    ssh junior_sr@192.168.1.150
+
+Paso 3: crear la carpeta .ssh
+[VM]
+    mkdir -p ~/.ssh
+    chmod 700 ~/.ssh
+Crea la carpeta y deja que solo mi usuario pueda entrar. SSH lo exige.
+
+Paso 4: agregar la llave a la lista de autorizadas
+[VM]
+    cat ~/id_rsa_vm.pub >> ~/.ssh/authorized_keys
+    chmod 600 ~/.ssh/authorized_keys
+"cat >>" agrega la llave al archivo authorized_keys.
+"chmod 600" deja el archivo privado, solo para mi usuario.
+
+Paso 5: arreglar SELinux
+[VM]
+    restorecon -Rv ~/.ssh
+Red Hat usa SELinux; este comando corrige las etiquetas para que SSH pueda
+leer el archivo.
+
+Paso 6: borrar el archivo que ya no sirve y salir
+[VM]
+    rm ~/id_rsa_vm.pub
+    exit
+
+
+=========================================
+5. PRUEBA FINAL
+=========================================
+
+[WINDOWS]
+    ssh -i $env:USERPROFILE\.ssh\id_rsa_vm junior_sr@192.168.1.150
+"-i" indica cual llave privada usar.
+Si todo quedo bien, entra a la VM SIN pedir contrasena.
+(captura)
+
+
+=========================================
+SI ALGO FALLA
+=========================================
+
+- No hay ping: reviso que la VM este en Bridge y que VMnet0 use mi tarjeta
+  Wi-Fi (VMware > Editar > Editor de red virtual).
+- SSH no conecta: reviso con  systemctl status sshd  que este activo.
+- Con la llave sigue pidiendo contrasena: reviso los permisos con
+      ls -ld ~/.ssh
+      ls -l ~/.ssh/authorized_keys
+  Deben ser drwx------ (carpeta) y -rw------- (archivo).
+  Tambien miro el registro con:  sudo tail -n 20 /var/log/secure
+
+
+=========================================
+CAPTURAS QUE ENTREGO
+=========================================
+1. Ping de Windows a la VM
+2. sshd active (running)
+3. Conexion con contrasena
+4. Las dos llaves en la carpeta .ssh
+5. Conexion sin contrasena
