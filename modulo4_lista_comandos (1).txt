@@ -1,0 +1,213 @@
+MODULO IV - LISTA DE COMANDOS Y PARA QUE SE USAN
+VM: Red Hat 10.2 (usuario junior_sr)
+
+Formato:  comando  -->  para que sirve
+
+
+=========================================
+PRACTICA 1: SERVIDOR WEB (APACHE)
+=========================================
+
+sudo dnf install -y httpd
+    --> Instala Apache (en Red Hat se llama httpd).
+
+sudo systemctl enable --now httpd
+    --> Enciende Apache ahora y lo deja activo en cada arranque.
+
+sudo mkdir -p /var/www/holamundo /var/www/datos
+    --> Crea las carpetas de los dos sitios web.
+
+echo "<h1>Hola Mundo</h1>" | sudo tee /var/www/holamundo/index.html
+    --> Crea la pagina web (index.html). "tee" la guarda como root.
+
+sudo tee /etc/httpd/conf.d/sitios.conf
+    --> Crea el archivo con los hosts virtuales (puerto 80 y 8080).
+
+Listen 8080
+    --> (dentro del archivo) Le dice a Apache que abra el puerto 8080.
+
+<VirtualHost *:80> ... DocumentRoot /ruta
+    --> (dentro del archivo) Define que carpeta muestra cada puerto.
+
+sudo httpd -t
+    --> Revisa que la configuracion no tenga errores ("Syntax OK").
+
+sudo firewall-cmd --permanent --add-service=http --add-port=8080/tcp
+    --> Abre en el firewall los puertos 80 y 8080.
+
+sudo firewall-cmd --reload
+    --> Aplica las reglas nuevas del firewall.
+
+sudo systemctl restart httpd
+    --> Reinicia Apache para que lea los cambios.
+
+sudo ss -tlnp | grep httpd
+    --> Muestra los puertos donde Apache esta escuchando.
+
+curl http://localhost  /  curl http://localhost:8080
+    --> Pide la pagina desde la VM para probar que funciona.
+
+cat archivo
+    --> Muestra el contenido de un archivo.
+
+
+=========================================
+PRACTICA 2: SERVIDOR DE CORREO (POSTFIX)
+=========================================
+
+ping -c 4 8.8.8.8
+    --> Comprueba que la VM tiene internet (envia 4 paquetes).
+
+timeout 5 bash -c '</dev/tcp/smtp.gmail.com/587' && echo "abierto" || echo "bloqueado"
+    --> Prueba si la red deja conectarse al puerto 587 de Gmail.
+
+sudo dnf install -y postfix cyrus-sasl-plain
+    --> Instala Postfix (servidor de correo) y el modulo para iniciar sesion en Gmail.
+
+sudo systemctl enable --now postfix
+    --> Enciende Postfix y lo deja activo en cada arranque.
+
+systemctl status postfix
+    --> Muestra si Postfix esta funcionando (active (running)).
+
+sudo postconf -e "relayhost = [smtp.gmail.com]:587" ...
+    --> Configura Postfix para enviar los correos a traves de Gmail.
+
+echo '[smtp.gmail.com]:587 correo:contrasena' | sudo tee /etc/postfix/sasl_passwd
+    --> Guarda el usuario y la contrasena de aplicacion de Gmail.
+
+sudo postmap /etc/postfix/sasl_passwd
+    --> Convierte ese archivo a la base de datos que Postfix puede leer.
+
+sudo chmod 600 /etc/postfix/sasl_passwd*
+    --> Deja el archivo de la contrasena legible solo por root.
+
+sudo postfix check
+    --> Revisa que la configuracion de Postfix no tenga errores.
+
+sudo systemctl restart postfix
+    --> Reinicia Postfix para aplicar los cambios.
+
+printf '...Subject: ...\n\ncuerpo' | sendmail -t
+    --> Envia el correo (destinatario, asunto y cuerpo van en el mensaje).
+
+sudo journalctl -u postfix -n 15 --no-pager
+    --> Muestra el registro de Postfix; "status=sent" significa que salio bien.
+
+mailq
+    --> Muestra los correos pendientes en cola.
+
+
+=========================================
+PRACTICA 3: SERVIDOR DE IMPRESION (CUPS)
+=========================================
+
+--- En la VM (servidor) ---
+
+sudo dnf install -y cups
+    --> Instala CUPS (servidor de impresion).
+
+sudo systemctl enable --now cups
+    --> Enciende CUPS y lo deja activo en cada arranque.
+
+systemctl status cups
+    --> Muestra si CUPS esta funcionando.
+
+sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+    --> Agrega el repositorio EPEL, donde esta cups-pdf.
+
+sudo dnf install -y cups-pdf
+    --> Instala la impresora virtual que guarda lo impreso como PDF.
+
+sudo subscription-manager repos --enable codeready-builder-for-rhel-10-$(arch)-rpms
+    --> (solo si falla la instalacion) Activa el repositorio CRB.
+
+rpm -q cups-pdf
+    --> Comprueba que cups-pdf quedo instalado.
+
+ls /usr/share/cups/model | grep -i pdf
+    --> Busca el archivo de configuracion (PPD) de la impresora PDF.
+
+sudo lpadmin -p PDF -E -v cups-pdf:/ -P /usr/share/cups/model/CUPS-PDF_opt.ppd -o printer-is-shared=true
+    --> Crea la impresora "PDF", la habilita y la comparte.
+
+sudo lpadmin -d PDF
+    --> La deja como impresora predeterminada.
+
+sudo cupsctl --remote-any --share-printers
+    --> Permite que otros equipos de la red usen las impresoras de CUPS.
+
+sudo firewall-cmd --permanent --add-service=ipp
+    --> Abre en el firewall el puerto 631 (impresion por red).
+
+sudo firewall-cmd --reload
+    --> Aplica la regla del firewall.
+
+sudo ss -tlnp | grep 631
+    --> Comprueba que CUPS esta escuchando en el puerto 631.
+
+echo "Prueba de impresion" | lp -d PDF
+    --> Manda una impresion de prueba a la impresora PDF.
+
+lpstat -t
+    --> Muestra el estado de las impresoras y los trabajos.
+
+lpstat -W completed
+    --> Muestra los trabajos de impresion ya terminados.
+
+sudo find / -name "*.pdf" -mmin -5 2>/dev/null
+    --> Busca los PDF creados en los ultimos 5 minutos.
+
+ls -l /var/spool/cups-pdf/*
+    --> Lista los PDF que genero la impresora.
+
+ip -br a
+    --> Muestra la IP de la VM.
+
+sudo tail -n 30 /var/log/cups/error_log
+    --> Muestra el registro de errores de CUPS.
+
+--- En Windows (cliente) ---
+
+Test-NetConnection 192.168.1.150 -Port 631
+    --> Comprueba que Windows llega al puerto de CUPS en la VM.
+
+http://192.168.1.150:631/printers/PDF
+    --> Direccion que se escribe al agregar la impresora en Windows.
+        (Impresoras y escaneres > Agregar > Agregar manualmente >
+        Seleccionar una impresora compartida por nombre)
+
+Controlador: Microsoft PS Class Driver
+    --> Controlador que se elige si Windows lo pide.
+
+
+=========================================
+COMANDOS QUE SE REPITEN EN LAS 3 PRACTICAS
+=========================================
+
+sudo
+    --> Ejecuta el comando con permisos de administrador.
+
+dnf install -y
+    --> Instala un programa.
+
+systemctl enable --now
+    --> Enciende un servicio y lo deja activo en cada arranque.
+
+systemctl status
+    --> Muestra si un servicio funciona.
+
+systemctl restart
+    --> Reinicia un servicio para aplicar cambios.
+
+firewall-cmd --permanent --add-... / --reload
+    --> Abre puertos en el firewall y aplica los cambios.
+
+ss -tlnp | grep
+    --> Muestra los puertos abiertos de un servicio.
+
+&&
+    --> Ejecuta el segundo comando solo si el primero funciono.
+
+|
+    --> Pasa la salida de un comando al siguiente.
