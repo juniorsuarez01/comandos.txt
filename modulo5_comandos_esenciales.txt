@@ -1,0 +1,107 @@
+MODULO V - COMANDOS ESENCIALES
+VM1 = vm1 (192.168.1.150)    VM2 = vm2 (192.168.1.151)    Usuario: junior_sr
+
+
+PRACTICA 1: RSYNC + CRON CADA MINUTO
+
+1. [VM1] Instalar
+   sudo dnf install -y rsync cronie && sudo systemctl enable --now sshd crond
+
+2. [VM1] Crear carpeta con 100 archivos
+   mkdir ~/origen && touch ~/origen/archivo{1..100}.txt
+
+3. [VM1] SSH sin contrasena (RSA por FIPS)
+   [ -f ~/.ssh/id_rsa ] || ssh-keygen -t rsa -b 4096 -N "" -f ~/.ssh/id_rsa
+   ssh-copy-id -i ~/.ssh/id_rsa.pub junior_sr@192.168.1.151
+
+4. [VM1] Copiar con rsync
+   rsync -avz ~/origen/ junior_sr@192.168.1.151:~/destino/
+
+5. [VM1] Crear el script
+   printf '#!/bin/bash\necho "=== $(date) ==="\nrsync -avz /home/junior_sr/origen/ junior_sr@192.168.1.151:/home/junior_sr/destino/\n' > ~/sync.sh
+   chmod +x ~/sync.sh
+
+6. [VM1] Programar cada minuto
+   (crontab -l 2>/dev/null; echo "* * * * * /home/junior_sr/sync.sh >> /home/junior_sr/sync.log 2>&1") | crontab -
+
+7. [VM1] Probar
+   touch ~/origen/archivo_nuevo.txt && mkdir ~/origen/carpeta_nueva
+
+8. [VM2] Verificar (esperar 1 minuto)
+   ls ~/destino | grep nuev
+
+
+PRACTICA 2: CLUSTER PACEMAKER + COROSYNC (IP flotante 192.168.1.200)
+
+1. [AMBAS] Nombres
+   sudo sed -i '/^192\.168\.1\.15[01][[:space:]]/d' /etc/hosts && printf '192.168.1.150 vm1 nodo1\n192.168.1.151 vm2 nodo2\n' | sudo tee -a /etc/hosts
+
+2. [AMBAS] Instalar
+   sudo dnf install -y pcs pacemaker fence-agents-all
+
+3. [AMBAS] Firewall
+   sudo firewall-cmd --permanent --add-service=high-availability && sudo firewall-cmd --reload
+
+4. [AMBAS] Servicio y clave
+   sudo systemctl enable --now pcsd
+   echo 'hacluster:Cluster123' | sudo chpasswd
+
+5. [VM1] Crear el cluster
+   sudo pcs host auth vm1 vm2 -u hacluster -p Cluster123
+   sudo pcs cluster setup micluster vm1 vm2 --start --enable
+   sudo pcs property set stonith-enabled=false
+   sudo pcs resource defaults update resource-stickiness=100
+
+6. [VM1] Crear la IP flotante
+   sudo pcs resource create IP_Virtual ocf:heartbeat:IPaddr2 ip=192.168.1.200 cidr_netmask=24 op monitor interval=5s
+
+7. [VM1] Verificar
+   sudo pcs status
+
+8. [WINDOWS - PowerShell] Ping continuo
+   ping -t 192.168.1.200
+
+9. Reiniciar por turnos (el ping se mantiene)
+   [VM1] sudo reboot
+   (esperar que vuelva)  [VM2] sudo reboot
+   [VM que queda] sudo pcs status
+
+
+PRACTICA 3: APACHE + KEEPALIVED (IP flotante 192.168.1.201)
+
+1. [AMBAS] Instalar
+   sudo dnf install -y httpd keepalived
+
+2. [AMBAS, solo si existe sitios.conf] Desactivar config vieja
+   sudo mv /etc/httpd/conf.d/sitios.conf /etc/httpd/conf.d/sitios.conf.off
+
+3. Pagina de cada servidor
+   [VM1] echo "<meta charset=UTF-8><h1>Server1</h1>" | sudo tee /var/www/html/index.html
+   [VM2] echo "<meta charset=UTF-8><h1>Server2</h1>" | sudo tee /var/www/html/index.html
+
+4. [AMBAS] Iniciar Apache y firewall
+   sudo systemctl enable --now httpd
+   sudo firewall-cmd --permanent --add-service=http
+   sudo firewall-cmd --permanent --add-protocol=vrrp
+   sudo firewall-cmd --reload
+
+5. [VM1] Keepalived MASTER
+   printf 'vrrp_instance VI_1 {\n    state MASTER\n    interface ens160\n    virtual_router_id 51\n    priority 150\n    advert_int 1\n    virtual_ipaddress {\n        192.168.1.201/24\n    }\n}\n' | sudo tee /etc/keepalived/keepalived.conf > /dev/null
+
+6. [VM2] Keepalived BACKUP
+   printf 'vrrp_instance VI_1 {\n    state BACKUP\n    interface ens160\n    virtual_router_id 51\n    priority 100\n    advert_int 1\n    virtual_ipaddress {\n        192.168.1.201/24\n    }\n}\n' | sudo tee /etc/keepalived/keepalived.conf > /dev/null
+
+7. [AMBAS] Iniciar Keepalived
+   sudo systemctl enable --now keepalived
+
+8. [VM1] Verificar (debe aparecer 192.168.1.201)
+   ip -br a
+
+9. [NAVEGADOR DE WINDOWS] Abrir
+   http://192.168.1.201      --> muestra Server1
+
+10. Probar la alta disponibilidad
+   (tomar instantanea antes)
+   [VM1] sudo poweroff
+   [NAVEGADOR] Ctrl + F5     --> misma direccion, muestra Server2
+   [VM2] ip -br a            --> ahora tiene 192.168.1.201
