@@ -1,0 +1,274 @@
+- GUIA RAPIDA - PRACTICAS MODULO VI
+
+
+  [ vm1 ]   servidor (192.168.1.150)
+  [ vm2 ]   clon
+  [ HOST ]  tu PC Windows (PowerShell)
+
+  Usuario: junior_sr
+
+
+- PRACTICA 1 - CIFRADO CON GPG
+
+
+PASO 1 - Instalar y crear la llave                [ vm1 ]
+
+    sudo dnf install gnupg2 -y
+    gpg --full-generate-key
+
+  Responde: 1 (RSA) > 4096 > 0 > y > nombre > correo > O > passphrase
+
+    gpg --list-keys
+
+
+PASO 2 - Crear y cifrar el archivo                [ vm1 ]
+
+    mkdir ~/practica_cifrado && cd ~/practica_cifrado
+    echo "Mensaje secreto de Junior" > secreto.txt
+    cat secreto.txt
+    gpg --encrypt --recipient TU_CORREO secreto.txt
+    rm secreto.txt
+    ls -l
+
+
+PASO 3 - Intentar leer el cifrado                 [ vm1 ]
+
+    cat secreto.txt.gpg
+
+
+PASO 4 - Descifrar y mostrar                      [ vm1 ]
+
+    gpg --output descifrado.txt --decrypt secreto.txt.gpg
+    cat descifrado.txt
+
+
+=====================================================
+  PRACTICA 2 - IPTABLES Y FIREWALL-CMD
+=====================================================
+
+  Las pruebas siempre desde vm2, con la IP de vm1.
+  Los comandos de vm1 hazlos en su consola, no por SSH.
+
+
+PASO 1 - Habilitar http, ftp y ssh
+
+  [ vm1 ]
+    sudo dnf install httpd vsftpd openssh-server ftp -y
+    sudo systemctl enable --now httpd vsftpd sshd
+    systemctl is-active httpd vsftpd sshd
+    sudo firewall-cmd --permanent --add-service={http,ftp,ssh}
+    sudo firewall-cmd --reload
+    sudo firewall-cmd --list-services
+
+  [ vm2 ]  (deben responder)
+    curl -I http://192.168.1.150
+    ftp 192.168.1.150
+    ssh junior_sr@192.168.1.150
+
+
+PASO 2 - Bloquear con iptables
+
+  [ vm1 ]
+    sudo iptables -I INPUT -p tcp --dport 80 -j DROP
+    sudo iptables -I INPUT -p tcp --dport 21 -j DROP
+    sudo iptables -I INPUT -p tcp --dport 22 -j DROP
+    sudo iptables -L INPUT -n -v --line-numbers
+
+  [ vm2 ]  (deben fallar por timeout)
+    curl -I --max-time 5 http://192.168.1.150
+    ssh -o ConnectTimeout=5 junior_sr@192.168.1.150
+    timeout 5 ftp 192.168.1.150
+
+
+PASO 3 - Habilitar con iptables
+
+  [ vm1 ]
+    sudo iptables -D INPUT -p tcp --dport 80 -j DROP
+    sudo iptables -D INPUT -p tcp --dport 21 -j DROP
+    sudo iptables -D INPUT -p tcp --dport 22 -j DROP
+    sudo iptables -L INPUT -n -v --line-numbers
+
+  [ vm2 ]  (deben responder)
+    curl -I http://192.168.1.150
+    ftp 192.168.1.150
+    ssh junior_sr@192.168.1.150
+
+
+PASO 4 - Bloquear con firewall-cmd
+
+  [ vm2 ]  primero cierra cualquier sesion SSH abierta con: exit
+
+  [ vm1 ]
+    sudo firewall-cmd --permanent --remove-service={http,ftp,ssh}
+    sudo firewall-cmd --reload
+    sudo firewall-cmd --list-services
+
+  [ vm2 ]  (deben fallar: "No route to host")
+    curl -I --max-time 5 http://192.168.1.150
+    ssh -o ConnectTimeout=5 junior_sr@192.168.1.150
+    ftp 192.168.1.150
+
+
+PASO 5 - Habilitar con firewall-cmd
+
+  [ vm1 ]
+    sudo firewall-cmd --permanent --add-service={http,ftp,ssh}
+    sudo firewall-cmd --reload
+    sudo firewall-cmd --list-services
+
+  [ vm2 ]  (deben responder)
+    curl -I http://192.168.1.150
+    ftp 192.168.1.150
+    ssh junior_sr@192.168.1.150
+
+
+=====================================================
+  PRACTICA 3 - IDS SNORT
+=====================================================
+
+PASO 1 - Preparar el sistema                      [ vm1 ]
+
+    sudo dnf install -y https://dl.fedoraproject.org/pub/epel/epel-release-latest-10.noarch.rpm
+    sudo crb enable
+    sudo dnf group install "Development Tools" -y
+    sudo dnf install -y git cmake flex bison gcc-c++ libpcap-devel pcre2-devel libdnet-devel hwloc-devel luajit-devel openssl-devel zlib-devel libuuid-devel xz-devel libunwind-devel libnghttp2-devel libtool autoconf automake pkgconf-pkg-config
+
+
+PASO 2 - Instalar LibDAQ                          [ vm1 ]
+
+    cd ~
+    git clone https://github.com/snort3/libdaq.git
+    cd libdaq
+    ./bootstrap
+    ./configure
+    make -j2
+    sudo make install
+    echo "/usr/local/lib" | sudo tee /etc/ld.so.conf.d/local.conf
+    echo "/usr/local/lib64" | sudo tee -a /etc/ld.so.conf.d/local.conf
+    sudo ldconfig
+
+
+PASO 3 - Instalar Snort 3                         [ vm1 ]
+
+    cd ~
+    git clone https://github.com/snort3/snort3.git
+    cd snort3
+    export PKG_CONFIG_PATH=/usr/local/lib/pkgconfig:/usr/local/lib64/pkgconfig:$PKG_CONFIG_PATH
+    ./configure_cmake.sh --prefix=/usr/local/snort
+    cd build
+    make -j2
+    sudo make install
+    /usr/local/snort/bin/snort -V
+
+
+PASO 4 - Crear las reglas                         [ vm1 ]
+
+  Anota el nombre de tu interfaz (ej. ens160):
+
+    ip -br a
+
+  Reglas:
+
+    sudo mkdir -p /usr/local/snort/etc/snort/rules
+    echo 'alert icmp any any -> 192.168.1.150 any (msg:"ICMP detectado"; sid:1000001; rev:1;)' | sudo tee /usr/local/snort/etc/snort/rules/local.rules
+    echo 'alert tcp any any -> 192.168.1.150 21 (msg:"Trafico puerto 21 FTP"; sid:1000002; rev:1;)' | sudo tee -a /usr/local/snort/etc/snort/rules/local.rules
+    echo 'alert tcp any any -> 192.168.1.150 22 (msg:"Trafico puerto 22 SSH"; sid:1000003; rev:1;)' | sudo tee -a /usr/local/snort/etc/snort/rules/local.rules
+    echo 'alert tcp any any -> 192.168.1.150 80 (msg:"Trafico puerto 80 HTTP"; sid:1000004; rev:1;)' | sudo tee -a /usr/local/snort/etc/snort/rules/local.rules
+    cat /usr/local/snort/etc/snort/rules/local.rules
+
+
+PASO 5 - Validar y ejecutar                       [ vm1 ]
+
+  Validar:
+
+    sudo /usr/local/snort/bin/snort -c /usr/local/snort/etc/snort/snort.lua -R /usr/local/snort/etc/snort/rules/local.rules -T
+
+  Ejecutar (cambia ens160 por tu interfaz y dejalo corriendo):
+
+    sudo /usr/local/snort/bin/snort -c /usr/local/snort/etc/snort/snort.lua -R /usr/local/snort/etc/snort/rules/local.rules -i ens160 -A alert_fast -k none
+
+  Si falla el DAQ, agrega al final:  --daq-dir /usr/local/lib/daq
+
+
+PASO 6 - Probar y ver alertas                     [ HOST ]
+
+    ping 192.168.1.150
+    Test-NetConnection 192.168.1.150 -Port 21
+    Test-NetConnection 192.168.1.150 -Port 22
+    Test-NetConnection 192.168.1.150 -Port 80
+
+  Las alertas salen en la terminal de Snort en vm1.
+  Para terminar pulsa Ctrl + C.
+
+
+=====================================================
+  PRACTICA 4 - 2FA CON GOOGLE AUTHENTICATOR
+=====================================================
+
+PASO 1 - Instalar                                 [ vm1 ]
+
+    sudo dnf install -y google-authenticator qrencode-libs
+
+  En el celular instala la app Google Authenticator.
+
+
+PASO 2 - Configurar el usuario                    [ vm1 ]
+  Como junior_sr, SIN sudo.
+
+    google-authenticator
+
+  Responde y a todo y escanea el QR con la app.
+  Guarda los codigos de emergencia.
+
+
+PASO 3 - Configurar PAM                           [ vm1 ]
+
+    sudo cp /etc/pam.d/sshd /etc/pam.d/sshd.bak
+    sudo sed -i '/^auth.*substack.*password-auth/a auth       required     pam_google_authenticator.so' /etc/pam.d/sshd
+    grep '^auth' /etc/pam.d/sshd
+
+
+PASO 4 - Configurar SSH                           [ vm1 ]
+
+    printf 'UsePAM yes\nKbdInteractiveAuthentication yes\nAuthenticationMethods keyboard-interactive\n' | sudo tee /etc/ssh/sshd_config.d/10-2fa.conf
+    sudo sshd -t
+    sudo systemctl restart sshd
+
+
+PASO 5 - Demostracion                             [ HOST ]
+
+    ssh junior_sr@192.168.1.150
+
+  Te pide: Password, luego Verification code
+  (codigo de la app, sin espacio).
+
+    whoami
+    hostname
+
+
+-----------------------------------------------------
+  SOLO SI EL PASO 5 FALLA (error de SELinux)
+-----------------------------------------------------
+
+  [ vm1 ]
+    sudo dnf install -y policycoreutils-python-utils
+    sudo semanage permissive -a sshd_session_t
+
+  [ HOST ]  un intento de login con password + codigo nuevo
+    ssh junior_sr@192.168.1.150
+
+  [ vm1 ]
+    sudo ausearch -m avc -ts recent | audit2allow -M sshd_google_final
+    sudo semodule -i sshd_google_final.pp
+    sudo semanage permissive -d sshd_session_t
+
+  [ HOST ]  repetir el Paso 5
+
+
+-----------------------------------------------------
+  DESHACER EL 2FA (opcional)                  [ vm1 ]
+-----------------------------------------------------
+
+    sudo rm /etc/ssh/sshd_config.d/10-2fa.conf
+    sudo cp /etc/pam.d/sshd.bak /etc/pam.d/sshd
+    sudo systemctl restart sshd
