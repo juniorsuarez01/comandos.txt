@@ -1,0 +1,72 @@
+PRACTICA 3 - CONTROLADOR DE DOMINIO SAMBA 4 (SO3.inet)
+=======================================================
+Servidor (VM-DC, Ubuntu/Debian): 192.168.114.20  -> dc1.so3.inet
+Windows (Pro):                    192.168.114.30  (DNS = 192.168.114.20)
+Red: Host-only 192.168.114.0/24
+Nota: Red Hat NO trae Samba como AD DC, por eso se usa Ubuntu/Debian.
+
+
+--- EN VM-DC (servidor) ---
+
+1) Instalar (con NAT, luego pasar a Host-only):
+   sudo apt update
+   sudo apt install -y samba krb5-user winbind smbclient dnsutils
+   (realm Kerberos: SO3.INET)
+
+2) Nombre e IP fija:
+   sudo hostnamectl set-hostname dc1.so3.inet
+   echo "192.168.114.20 dc1.so3.inet dc1" | sudo tee -a /etc/hosts
+   (IP fija 192.168.114.20/24 con netplan, luego: sudo netplan apply)
+
+3) Usuario Linux + Samba (matricula como clave):
+   sudo useradd -m -s /bin/bash lanegracubana
+   echo 'lanegracubana:20197551' | sudo chpasswd
+   printf '20197551\n20197551\n' | sudo smbpasswd -s -a lanegracubana
+
+4) Preparar el dominio:
+   sudo systemctl disable --now smbd nmbd winbind
+   sudo systemctl mask smbd nmbd winbind
+   sudo mv /etc/samba/smb.conf /etc/samba/smb.conf.orig
+
+5) Crear el dominio SO3.inet:
+   sudo samba-tool domain provision --use-rfc2307 --server-role=dc \
+     --dns-backend=SAMBA_INTERNAL --realm=SO3.INET --domain=SO3 \
+     --adminpass='Admin2026*'
+
+6) Kerberos y servicio:
+   sudo cp /var/lib/samba/private/krb5.conf /etc/krb5.conf
+   sudo systemctl unmask samba-ad-dc
+   sudo systemctl enable --now samba-ad-dc
+
+7) DNS propio:
+   sudo systemctl disable --now systemd-resolved
+   sudo rm -f /etc/resolv.conf
+   printf 'nameserver 192.168.114.20\nsearch so3.inet\n' | sudo tee /etc/resolv.conf
+
+8) Permitir clave numerica (matricula) y crear usuario del dominio:
+   sudo samba-tool domain passwordsettings set --complexity=off --min-pwd-length=8
+   sudo samba-tool user create lanegracubana 20197551
+
+9) Verificar:
+   host -t SRV _ldap._tcp.so3.inet
+   kinit administrator@SO3.INET
+   sudo samba-tool user list
+
+
+--- EN WINDOWS ---
+
+10) IPv4: IP 192.168.114.30 / 255.255.255.0 / DNS preferido 192.168.114.20
+    Probar en CMD: ping 192.168.114.20  y  nslookup so3.inet
+
+11) Unir al dominio:
+    Panel de control > Sistema > Cambiar configuracion > Cambiar > Dominio: SO3.inet
+    Credenciales: Administrator / Admin2026*   -> Reiniciar
+
+12) Iniciar sesion con el usuario del dominio:
+    Usuario: SO3\lanegracubana    Contrasena: 20197551
+
+
+--- SI FALLA ---
+- No encuentra el dominio: revisar que el DNS de Windows sea 192.168.114.20.
+- Error de hora: igualar la hora de Windows y del servidor (Kerberos).
+- Clave rechazada: repetir el paso 8 (complexity=off) antes de crear el usuario.
